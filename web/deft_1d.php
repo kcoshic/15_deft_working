@@ -19,7 +19,7 @@ $("#menubar_1d").addClass("active");
             <div id="data_title"><h4>&nbsp;</h4></div> 
 
             <!-- DIV for Google Chart -->
-            <div id="google_chart" style="width: 500px; height: 250px"></div>
+            <div id="google_chart" style="width: 700px; height: 350px"></div>
 
             <!-- This is where the data is stored -->
             <input type="hidden" id="data" name="data">

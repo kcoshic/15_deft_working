@@ -305,17 +305,6 @@ draw_chart = function() {
     // Specify options, including the series_specs defined above
     options = {
         //title: $("#data_description").val(),
-        legend: { position: 'bottom'},
-        vAxis: {
-            viewWindow: {min: 0, max: 1.5*Q_max}, 
-            gridlines: {color: "none"}
-        },
-        hAxis: {
-            viewWindow: {min: results.box_min, max: results.box_max}, 
-            title: "", 
-            baselineColor:"none", 
-            gridlines: {color: "none"}
-        },
         interval: {'dQ': { 
             style:'area', 
             curveType:'function', 
@@ -323,7 +312,18 @@ draw_chart = function() {
             color:deft_color }},
         series: series_specs,
         bar: {groupWidth: "100%"},
-        chartArea: {'width': '100%', 'height': '80%'},
+        vAxis: {
+            viewWindow: {min: 0, max: 1.5*Q_max}, 
+            gridlines:{count:0},
+        },
+        hAxis: {
+            viewWindow: {min: results.box_min, max: results.box_max}, 
+            gridlines: {color: "none"},
+            baselineColor:"none",
+            title: "units"
+        },
+        legend:{position:'top'},
+        chartArea: {'width': '80%', 'height': '60%'},
     };
 
     // Get DIV element into which chart will be placed 

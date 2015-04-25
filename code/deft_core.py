@@ -301,11 +301,12 @@ def compute_corrector_step(phi, R, Delta, t, tollerance=1E-5, report_num_steps=F
             # Compute new phi 
             phi_new = phi + beta*dphi
             try:
-                Q_new = utils.field_to_prob(phi_new)
+                Q_new = utils.field_to_prob(phi_new, regularize=True)
             except:
-                print phi
-                print dphi
-                print beta
+                print 'Error: setting Q_new failed.'
+                print 'phi == %s'%str(phi)
+                print 'dphi == %s'%str(dphi)
+                print 'beta== %s'%str(beta)
                 raise
 
             # Make sure beta isn't fucking up
