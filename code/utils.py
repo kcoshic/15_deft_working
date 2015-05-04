@@ -6,8 +6,8 @@ from numpy.polynomial.legendre import legval, legval2d
 # A very small floating point number, used to prevent taking logs of 0
 TINY_FLOAT64 = sp.finfo(sp.float64).tiny
 TINY_FLOAT32 = sp.finfo(sp.float32).tiny
-PHI_MIN = -50
-PHI_MAX = 50
+PHI_MIN = -500
+PHI_MAX = 500
 
 # This is useful for testing whether something is a number
 NUMBER = (int, float, long)
@@ -41,45 +41,57 @@ def geo_dist(P,Q):
     return dist
 
 # Convert field to non-normalized probabiltiy distribution
-def field_to_quasiprob(phi, regularize=False):
+def field_to_quasiprob(raw_phi):
+    phi = np.copy(raw_phi) 
+    G = len(phi)
 
-    if regularize:
-        phi[phi < PHI_MIN] = PHI_MIN 
-        phi[phi > PHI_MAX] = PHI_MAX 
+    # Make sure phi is real
+    # If not, there is nothing we can do. Abort
+    assert all(np.isreal(phi))
 
-    try:
-        assert all(np.isreal(phi))
-    except:
-        print phi
-        raise
+    # If any values of phi are too large
+    # set equal to upper bound
+    #if any(phi > PHI_MAX):
+    #    phi[phi > PHI_MAX] = PHI_MAX
 
-    G = 1.*len(phi)
+    # If any values of phi are too samll, abort
+    assert all(phi > PHI_MIN)
 
+    # Compute quasiQ
     quasiQ = sp.exp(-phi)/(1.*G)
 
-    try:
-        assert all(np.isfinite(quasiQ))
-    except:
-        print phi
-        print quasiQ
-        raise
-    # Replace problematic values with zero
-    #indices = ~np.isfinite(quasiQ)
-    #quasiQ[indices] = 0.0
-
-    # Check to see if Q has been fixed. If not, raise error
-    assert all(np.isreal(quasiQ))
-    if not all(quasiQ) >= 0:
-        print 'Error: Q cannot be calculated from phi'
-        raise
+    # Make sure Q is finit
+    assert all(np.isfinite(quasiQ))
 
     # Return quasiprob
     return quasiQ
 
 # Convert field to normalized probability distribution
-def field_to_prob(phi, regularize=False):  
-    quasiQ = field_to_quasiprob(phi, regularize=regularize)
-    Q = quasiQ/sum(quasiQ)
+def field_to_prob(raw_phi): 
+    phi = np.copy(raw_phi) 
+    G = len(phi)
+
+    # Make sure phi is real
+    # If not, there is nothing we can do. Abort
+    assert all(np.isreal(phi))
+
+    # Relevel phi
+    # NOTE: CHANGES PHI!
+    phi -= min(phi)
+
+    # If any values of phi are too large
+    # set equal to upper bound
+    #if any(phi > PHI_MAX):
+    #    phi[phi > PHI_MAX] = PHI_MAX
+
+    # Compute quasiQ
+    denom = sp.sum(sp.exp(-phi))
+    Q = sp.exp(-phi)/denom
+
+    # Make sure Q is finit
+    assert all(np.isfinite(Q))
+
+    # Return probability
     return Q
 
 # Convert probability distribution to field
@@ -118,7 +130,7 @@ def grid_info_from_bbox_and_G(bbox, G):
 
 
 # Make a 1d histogram. Bounding box is optional
-def histogram_counts_1d(data, G, bbox=[-np.Inf,np.Inf]):
+def histogram_counts_1d(data, G, bbox=[-np.Inf,np.Inf], normalized=False):
 
     # Get interval spanned by data
     data_interval = max(data)-min(data)
@@ -155,20 +167,27 @@ def histogram_counts_1d(data, G, bbox=[-np.Inf,np.Inf]):
     # Get counts in each bin
     counts, _ = np.histogram(data, bins=bin_edges, density=False)
 
+    if normalized:
+        hist = 1.*counts/np.sum(h*counts)
+    else:
+        hist = counts
+
     # Return the number of counts, the bin centers, and the bbox
-    return counts, bin_centers
+    return hist, bin_centers
 
 # Make a histogram
-def histogram_2d(data, num_bins=[10,10], normalized=False):
-    data_x = [d[0] for d in data]
-    data_y = [d[1] for d in data]
-    hist, xedges, yedges = np.histogram2d(data_x, data_y, bins=num_bins,\
-        normed=normalized)
-    hx = xedges[1]-xedges[0]
-    hy = yedges[1]-yedges[1]
+def histogram_2d(data, box, num_bins=[10,10], normalized=False):
+    data_x = data[0]
+    data_y = data[1]
 
-    xs =xedges[:-1]-hx/2.
-    ys =yedges[:-1]-hx/2.
+    hx, xs, x_edges = \
+        grid_info_from_bbox_and_G(box[0], num_bins[0])
+    hy, ys, y_edges = \
+        grid_info_from_bbox_and_G(box[1], num_bins[1])
+
+    hist, xedges, yedges = np.histogram2d(data_x, data_y, 
+        bins=[x_edges, y_edges], normed=normalized)
+
     return hist, xs, ys
 
 # Returns the left edges of a binning given the centers

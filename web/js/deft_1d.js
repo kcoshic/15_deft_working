@@ -90,12 +90,13 @@ function readSingleFile(e) {
         // Set file name
         full_fake_path = $("#file_selector").val()
         obj.description = full_fake_path.replace(/^.*[\\\/]/,'')
-
+        $("#file_name").html(obj.description)
+        $("#file_name").attr('href','file://' + full_fake_path)
         set_form_values(obj)
 
-        run_deft()
+        //run_deft()
 
-        draw_chart()
+        //draw_chart()
     };
 
     // I guess readAsText is method of FileReader. 
@@ -136,7 +137,40 @@ run_deft = function() {
     if ($("#show_kde").is(":checked")) {
         run_kde()
     }
+    // Run MaxEnt if requested
+    if ($("#show_maxent").is(":checked")) {
+        run_maxent()
+    }
 }
+
+
+// Have server perform maxent density estimation
+run_maxent = function() {
+    // Data to send to server
+    form_data = $("#form").serialize()
+
+    // Tell user that we're waiting for a density estimate from the server
+    $("#google_chart").html("<h4> Waiting for KDE estimte from server... </h4>")
+
+    // Get data from server in JSON format
+    json_string = $.ajax({
+        type: "POST",
+        data: form_data,
+        url: "run_maxent_1d.php",
+        dataType:  "json",
+        async: false
+    }).responseText;
+
+    // Display object
+    $("#google_chart").html('<pre>' + json_string + '</pre>')
+
+    // Convert results into JavaScript object (results_object is global)
+    kde_results = JSON.parse(json_string)
+
+    // Store maxent results, but that's it
+    results.Q_maxent = kde_results.Q_maxent
+}
+
 
 // Has server perform kernel density estimation
 run_kde = function() {
@@ -185,6 +219,7 @@ draw_chart = function() {
     deft_color = "#009933"
     true_color = "#000000"
     kde_color = "#CC66FF" //"#FF9900"
+    maxent_color = "#FF9900"
 
     // Used to set ylims
     Q_max = Math.max.apply(null, results.Q_star)
@@ -192,9 +227,54 @@ draw_chart = function() {
     // If there is a true distribution, compute it
     if ($("#input_source_simulation").prop('checked') && $("#pdf").val()) {
         pdf_text = $("#pdf").val()
-        results.Q_true = eval_function(results.x_grid, pdf_text)
-        //Q_max = Math.max.apply(null, results.Q_true)
+        Q_true = eval_function(results.x_grid, pdf_text)
+        h = results.h
+        G = results.G
+        
+        // Integrate Q_true
+        Q_true_integral = 0
+        for (i=0; i<G; i++) {
+            Q_true_integral += Q_true[i]*h
+        }
+
+        // Normalize Q_true
+        for (i=0; i<G; i++) {
+            Q_true[i] /= Q_true_integral
+        }
+        
+        // Compute differential entropy in bits
+        e_true = 0
+        for (i=0; i<Q_true.length; i++) {
+            e_true += -h * Q_true[i] * Math.log2(Q_true[i])
+        }
+
+        // Store results
+        results.Q_true = Q_true
+        results.e_true = e_true
     }
+
+    // Display entropy estimate
+    e_mean = results.e_mean
+    e_std = results.e_std
+
+    // Determine number of digits to display
+    for (digits=0; digits<7; digits++) {
+        if (e_std >= 4*Math.pow(10,-(digits))) {
+            break;
+        }
+    }
+
+    disp_string = "<center>Estimated entropy:&nbsp;&nbsp;" + e_mean.toFixed(digits) 
+        + ' &plusmn; ' + e_std.toFixed(digits) + ' bits<br>'
+    if ($("#input_source_simulation").prop('checked') && $("#pdf").val()) {
+        e_true = results.e_true
+        
+        z = (e_true - e_mean)/e_std
+        disp_string += 'True entropy:&nbsp;&nbsp;' + e_true.toFixed(digits) 
+            + ' bits&nbsp;&nbsp;(z-score: ' + z.toFixed(1) + ')' 
+    }
+    disp_string += '</center>'
+    $("#entropy").html(disp_string)
 
     // Create Google Data Table object
     data_table = new google.visualization.DataTable();
@@ -249,10 +329,6 @@ draw_chart = function() {
 
         // Compute true distribution
         pdf_text = $("#pdf").val()
-        results.Q_true = eval_function(results.x_grid, pdf_text)
-
-        // Change max for plotting density estimate
-        //Q_max = Math.max.apply(null, results.Q_true)
 
         // Add plotting info
         cols.push(results.Q_true)
@@ -269,9 +345,18 @@ draw_chart = function() {
          num_plots += 1
     }
 
+    // If user wishes to see the maxent estimate
+    if ($("#show_maxent").is(':checked')) {
+         cols.push(results.Q_maxent)
+         data_table.addColumn({id:'Q_maxent', type:'number', role:'data', label:'MaxEnt'})
+         series_specs[num_plots] = {type: "line", color:maxent_color, lineWidth:4}
+         num_plots += 1
+    }
+
     // If user wishes to show error bars 
     // WARNING: HAS TO GO LAST IN LIST OF PLOTS. 
     // OTHERWISE FORMATTING OF OTHER PLOTS GETS FUCKED UP. REASON UNKNOWN.
+    /*
     if ($("#show_errorbars").is(':checked')) {
         // Append data columns
         cols.push(results.Q_lb)
@@ -288,6 +373,7 @@ draw_chart = function() {
         // Increment the number of things that are being plotted
         num_plots += 2
     }
+    */
 
     // Transform cols into rows
     num_cols = cols.length
@@ -320,10 +406,10 @@ draw_chart = function() {
             viewWindow: {min: results.box_min, max: results.box_max}, 
             gridlines: {color: "none"},
             baselineColor:"none",
-            title: "units"
+            title: results.N.toString() + " data points"
         },
         legend:{position:'top'},
-        chartArea: {'width': '80%', 'height': '60%'},
+        chartArea: {'width': '90%', 'height': '80%'},
     };
 
     // Get DIV element into which chart will be placed 
@@ -379,8 +465,8 @@ get_simulated_data = function(event) {
     obj = JSON.parse(jsonData)
 
     // Get function
-    if (obj.hasOwnProperty('pdf')) {
-        $("#pdf").val(obj.pdf)
+    if (obj.hasOwnProperty('pdf_js')) {
+        $("#pdf").val(obj.pdf_js)
     }
 
     set_form_values(obj)
@@ -437,8 +523,7 @@ set_form_values = function(obj) {
 
     if (obj.hasOwnProperty('description')) {
         //$("#data_description").val(obj.description)
-        $("#data_title").html("<h4> " + obj.description.trim() + 
-            "&nbsp;&nbsp;(N = " + obj.data.length + ") </h4>")
+        $("#data_title").html("<h4> " + obj.description.trim() + "</h4>")
     }
 
     use_presets = 

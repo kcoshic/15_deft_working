@@ -5,6 +5,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Pickles
+*.pickle
+
 # Distribution / packaging
 .Python
 env/

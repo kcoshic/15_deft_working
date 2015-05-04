@@ -51,6 +51,8 @@ def get_commandline_arguments():
     parser.add_argument('-o', '--output_file', help='specify name for output file. Otherwise output is written to stdout')
     parser.add_argument('-l', '--length_scale', default='auto', help='Specify smoothness length scale: "auto" (default), "infinity", or a float.')
     parser.add_argument('--no_output', action='store_true', help="No not give any output. Useful for debugging only.")
+    parser.add_argument('--errorbars', action='store_true', help="Return errorbars.")
+
 
     # Parse arguments
     args = parser.parse_args()
@@ -165,51 +167,97 @@ def load_data(data_file_handle, MAX_NUM_DATA=1E6):
 #
 
 def run(data, G=100, alpha=3, bbox=[-np.Inf, np.Inf], periodic=False, \
-        resolution=3.14E-2, tollerance=1E-3, num_samples=10):
+        resolution=3.14E-2, tollerance=1E-3, num_samples=100, 
+        errorbars=False, print_t=False, ell_guess=False):
     
     # Start clock
     start_time = time.clock()
 
     # Create Laplacian
+    laplacian_start_time = time.clock()
     if periodic:
-        Delta = laplacian.Laplacian('1d_periodic', alpha, G, 1.0)
+        op_type = '1d_periodic'
     else:
-        Delta = laplacian.Laplacian('1d_bilateral', alpha, G, 1.0)
+        op_type = '1d_bilateral'
+
+    # Check for Laplacian on disk. Otherwise, create de novo
+    laplacian_dir = '/Users/jkinney/github/15_deft/laplacians/'
+    file_name = '%s%s_alpha_%d_G_%d.pickle'%(laplacian_dir,op_type,alpha,G)
+    if os.path.isfile(file_name):
+        Delta = laplacian.load(file_name)
+        if print_t:
+            print 'Laplacian loaded from disk'
+    else:
+        Delta = laplacian.Laplacian(op_type, alpha, G, 1.0)
+        if print_t:
+            print 'Laplacian computed de novo'
+    laplacian_compute_time = time.clock() - laplacian_start_time
 
     # Get histogram counts and grid centers
     counts, bin_centers = utils.histogram_counts_1d(data, G, bbox=bbox)
+    N = sum(counts)
 
     # Get other information agout grid
     bbox, h, bin_edges = utils.grid_info_from_bin_centers_1d(bin_centers)
 
+    # Compute initial t
+    if ell_guess:
+        t_start = sp.log(N) - 2.0*alpha*sp.log(ell_guess/h)
+    else:
+        t_start = sp.log(N) - 2.0*alpha*sp.log(G/4.0)
+    if print_t:
+        print 't_start == %0.2f'%t_start
+
     # Do DEFT density estimation
-    Q_star, R, Q_ub, Q_lb, Q_samples, map_curve = deft_core.run(counts, Delta, resolution=resolution, tollerance=tollerance, details=True, errorbars=True, num_samples=num_samples)
+    core_results = deft_core.run(counts, Delta, resolution=resolution, tollerance=tollerance, details=True, errorbars=errorbars, num_samples=num_samples, t_start=t_start, print_t=print_t)
 
-    # Stop clock
-    end_time = time.clock()
+    # Fill in results
+    copy_start_time = time.clock()
+    results = core_results # Get all results from deft_core
 
-    # Build up list of results. 
-    # Remember to rescale R and Q_star by 1/h so tha they are normalized
-    results = Results()
-    results.R = R/h
-    results.Q_star = Q_star/h
-    results.Q_lb = Q_lb/h
-    results.Q_ub = Q_ub/h
-    results.counts = counts
-    results.N = sum(counts)
-    results.bbox = bbox
-    results.h = h
-    results.G = G
+    # Normalize densities properly
+    results.h = h 
     results.L = G*h
+    results.R /= h
+    results.Q_star /= h
+    if results.errorbars:
+        results.Q_lb /= h
+        results.Q_ub /= h
+    if results.num_samples > 0:
+        results.Q_samples /= h
+    for p in results.map_curve.points:
+        p.Q /= h
+        p.ell = (sp.exp(-p.t)*G)**(1/(2.*alpha))
+        
+    # Get 1D-specific information
     results.bin_centers = bin_centers
     results.bin_edges = bin_edges
-    results.resolution = resolution
-    results.tollerance = tollerance
     results.periodic = periodic
     results.alpha = alpha
-    results.execution_time = end_time-start_time
-    results.map_curve = map_curve
-    results.Q_samples = Q_samples/h
+    results.bbox = bbox
+    copy_compute_time = time.clock() - copy_start_time
+
+    # Compute differential entropy in bits
+    entropy_start_time = time.clock()
+    if results.num_samples > 1:
+        entropies = np.zeros(num_samples)
+        for i in range(results.Q_samples.shape[1]):
+            Q = results.Q_samples[:,i].ravel()
+            entropy = -sp.sum(h*Q*sp.log2(Q + utils.TINY_FLOAT64))
+            #for j in range(G):
+            #    entropy += -results.h*Q[j]*sp.log2(Q[j] + utils.TINY_FLOAT64)
+            entropies[i] = entropy
+
+        # Compute mean and variance of the differential entropy
+        results.entropies = entropies
+        results.e_mean = np.mean(entropies)
+        results.e_std = np.std(entropies)
+        results.entropy_compute_time = time.clock() - entropy_start_time
+
+    # Record execution time
+    results.copy_compute_time = copy_compute_time
+    results.laplacian_compute_time = laplacian_compute_time
+    results.deft_1d_compute_time = time.clock()-start_time
 
     return results
 #
@@ -239,7 +287,7 @@ if __name__ == '__main__':
     periodic = args.periodic
 
     # Compute DEFT density estimate
-    results = run(data, G=G, alpha=alpha, bbox=bbox, periodic=periodic, num_samples=args.num_samples)
+    results = run(data, G=G, alpha=alpha, bbox=bbox, periodic=periodic, num_samples=args.num_samples, errorbars=args.errorbars)
 
     # Do KDE estimate as well
     #if args.kde:
@@ -247,37 +295,38 @@ if __name__ == '__main__':
     
     # Output results
     Q_star = results.Q_star
-    Q_lb = results.Q_lb
-    Q_ub = results.Q_ub
     x_grid = results.bin_centers
     R = results.R
     Q_samples = [[q for q in Q] for Q in results.Q_samples.T]
+    num_samples = len(Q_samples)
 
     # Verify output
     assert len(Q_star)==G
-    assert len(Q_ub)==G
-    assert len(Q_lb)==G
     assert len(x_grid)==G
     assert len(R)==G
-    #assert len(Q_kde) == G
 
     # Create dictionary to return as JSON object
     results_dict = {
         'Q_samples':Q_samples,
         'Q_star':list(Q_star),
-        'Q_lb':list(Q_lb),
-        'Q_ub':list(Q_ub),
         'x_grid':list(x_grid),
         'R':list(R),
-        #'Q_kde':list(Q_kde),
         'h':results.h,
         'G':results.G,
         'L':results.L,
         'alpha':alpha,
         'box_min':bbox[0],
         'box_max':bbox[1],
-        'periodic':periodic
+        'periodic':periodic,
+        'entropies':list(results.entropies),
+        'e_mean':results.e_mean,
+        'e_std':results.e_std,
+        'N':results.N
     }
+
+    if args.errorbars:
+        results_dict['Q_lb']=list(results.Q_lb)
+        results_dict['Q_ub']=list(results.Q_ub)
 
     # Output in JSon format
     if args.json:

@@ -15,14 +15,18 @@ $("#menubar_1d").addClass("active");
         <div class="col-sm-12">
             <center>
 
-            <!-- DIV title for Google Chart -->
+            <!-- DIV title for chart title -->
             <div id="data_title"><h4>&nbsp;</h4></div> 
 
             <!-- DIV for Google Chart -->
-            <div id="google_chart" style="width: 700px; height: 350px"></div>
+            <div id="google_chart" style="width: 600px; height: 300px"></div>
 
             <!-- This is where the data is stored -->
             <input type="hidden" id="data" name="data">
+
+            <!-- DIV for entropy estimate -->
+            <br>
+            <div id="entropy">&nbsp;<br>&nbsp;</div>
 
             <!-- DIV for displaying links to .png and .csv files -->
             <div id='output_links' class="row" >
@@ -53,13 +57,15 @@ $("#menubar_1d").addClass("active");
                 checked> 
              Estimate &nbsp;&nbsp; 
 
+            <!--
             <input type="checkbox" 
                 id="show_errorbars"
                 onclick="draw_chart();"
-                checked> 
+                value='False'> 
              Errorbars &nbsp;&nbsp; 
+            -->
 
-             Plausible  
+            Posterior samples  
             <select id='num_posterior_samples' 
                 name='num_posterior_samples'
                 onchange="draw_chart();">
@@ -71,11 +77,37 @@ $("#menubar_1d").addClass("active");
             <input type="hidden" name="max_posterior_samples" value="100">
             &nbsp; &nbsp;
 
-
             <input type="checkbox" 
-                id="show_pdf" 
-                onclick="draw_chart();"> 
-             True &nbsp;&nbsp; 
+                id="show_maxent"
+                onclick="
+                    if ($('#show_maxent').is(':checked')) {
+                        run_maxent()
+                    } 
+                    draw_chart()
+                    "> 
+            MaxEnt
+            <small>
+            <select id='maxent_order' 
+                name='maxent_order'
+                onchange="
+                    $('#show_maxent').prop('checked',true); 
+                    run_maxent(); 
+                    draw_chart()">
+                <option value='1' selected='selected'>1</option>
+                <option value='2'>2</option>
+                <option value='3' selected='selected'>3</option>
+                <option value='4'>4</option>
+                <option value='5'>5</option>
+                <option value='5'>6</option>
+                <option value='5'>7</option>
+                <option value='5'>8</option>
+                <option value='5'>9</option>
+                <option value='10'>10</option>
+                <option value='15'>15</option>
+                <option value='20'>20</option>
+            </select>
+            </small>
+            &nbsp; &nbsp;
 
             <input type="hidden" id="pdf">
             <input type="checkbox" 
@@ -87,15 +119,11 @@ $("#menubar_1d").addClass("active");
                     draw_chart()
                     "> 
             KDE &nbsp;&nbsp;
+
             <input type="checkbox" 
-                id="show_gmm"
-                onclick="
-                    if ($('#show_gmm').is(':checked')) {
-                        run_gmm()
-                    } 
-                    draw_chart()
-                    "> 
-            GMM &nbsp;&nbsp;
+                id="show_pdf" 
+                onclick="draw_chart();"> 
+            True
 
             </center> 
         </div>
@@ -107,20 +135,46 @@ $("#menubar_1d").addClass("active");
     <div class="row">
         <!-- Specify data -->
         
-        <div class="col-sm-4" id="simulate_data_div">
+        <div class="col-sm-2">
+            <center>
+            <a class="btn btn-md btn-success" role="button" 
+               id="run_deft_button"
+               onclick="
+               if ($('#input_source_simulation').is(':checked')) {
+                   get_simulated_data();
+               }
+               else if ($('#input_source_example').is(':checked')) {
+                   get_example_data();
+               }
+               else if ($('#input_source_user').is(':checked')) {
+                    run_deft()
+                    draw_chart()
+               }
+               else {
+                    $('#google_chart').html('<h4> ERROR! Cant identify input type </h4>');
+               }
+               ">
+               Get data <br> and <br> run DEFT 
+            </a>
+            </center>
+        </div>
+
+        <div class="col-sm-10" id="simulate_data_div">
             
             <!-- Press button to simulate data -->
-            <center>
-            <input type="radio" id="input_source_simulation" name="input_source" value="simulation" style="display:none"> 
             <p>
-            <a class="row btn btn-md btn-success" role="button"
-                 onclick="get_simulated_data();">
-                Simulate data
-            </a>
-            </p>
-            <small>
+            <label 
+                onclick="
+                    $('#input_source_simulation').prop('checked',true)
+                    $('#show_pdf').prop('disabled', false)
+                ">
+            <input type="radio" 
+                id="input_source_simulation" 
+                name="input_source" value="simulation" >
+            Simulated data: &nbsp; 
+
             <!-- Select probability distribution -->
-            <p>
+            <small>
             <select name='distribution' 
                     width='30' >
                 <option value="gaussian">
@@ -131,6 +185,18 @@ $("#menubar_1d").addClass("active");
                 </option>
                 <option value="wide" selected='selected'>
                     Gaussian mixture, wide separation
+                </option>
+                <option value="accordian">
+                    Accordian
+                </option>
+                <option value="foothills">
+                    Foothills
+                </option>
+                <option value="goalposts">
+                    Goalposts
+                </option>
+                <option value="towers">
+                    Towers
                 </option>
                 <option value="uniform">
                     Uniform 
@@ -157,14 +223,11 @@ $("#menubar_1d").addClass("active");
                     von Mises 
                 </option>
             </select>
-            </p>
-            
+            &nbsp; &nbsp;
 
             <!-- Select number of data points -->
-            <p>
             N:
-            <select name='num_samples' 
-                    width='5'>
+            <select name='num_samples'>
                 <option value='10'> 10 </option>
                 <option value='30'> 30 </option>
                 <option value='100' selected='selected'> 100 </option>
@@ -172,30 +235,30 @@ $("#menubar_1d").addClass("active");
                 <option value='1000'> 1,000 </option>
                 <option value='10000'> 10,000 </option>
                 <option value='100000'> 100,000 </option>
-            </select>. &nbsp;
+            </select> &nbsp; &nbsp;
             <input type="checkbox" id="use_simulation_presets" checked> 
-            Use presets
-            </p>
+            Presets
             </small>
-            </center>
 
-        </div>
-
-        <div class="col-sm-4">
-
-            <center>
-            <input type="radio" id="input_source_example" name="input_source" value="example" style="display:none"> 
-
-            <p>
-            <!-- Press button to simulate data -->
-            <a class="btn btn-md btn-success" role="button"
-               onclick="get_example_data()">
-               Load example data
-            </a>
+            </label>
             </p>
-            <small>
-            <!-- Grab dta from file-->
+        
             <p>
+            <label onclick="
+                $('#input_source_example').prop('checked',true);
+                $('#show_pdf').prop('checked', false)
+                $('#show_pdf').prop('disabled', true)
+                ">
+            <input 
+                type="radio" 
+                id="input_source_example" 
+                name="input_source" 
+                value="example" > 
+            Example data:
+            <small>
+            
+            <!-- Grab data from file-->
+          
             <select name='example_data_file' 
                     width='30' >
                 <option value="old_faithful_eruption_times.dat">
@@ -210,42 +273,55 @@ $("#menubar_1d").addClass("active");
                 <option value="treatment_length.dat">
                     treatment length
                 </option>
-            </select>.
-            </p>
-
-            <p>
+            </select>
+            &nbsp;
             <input type="checkbox" id="use_example_presets" checked> 
-            Use presets
-            </p>
+            Presets
             </small>
-            </center>
-
-        </div>
-        <div class="col-sm-4"> 
-
-            <center>
-            <input type="radio" id="input_source_user" name="input_source" value="user" style="display:none">  
+            </label>
+            </p>
 
             <p>
-            <input type="file" id="file_selector" style="display: none;" />
-            <a class="btn btn-md btn-success" role="button" 
-               onclick="document.getElementById('file_selector').click();">Upload your own data </a>
-            </p>
-
+            <label onclick="
+                $('#input_source_user').prop('checked',true)
+                $('#show_pdf').prop('checked', false)
+                $('#show_pdf').prop('disabled', true)
+                ">
+            <input type="radio" id="input_source_user" name="input_source" value="user">  
+            Your data: &nbsp;
             <small>
-            <p>
+
             <input type="checkbox" id="automatic_box" name="automatic_box"checked> 
-            Set box automatically
-            </p>
+            Set box automatically. &nbsp;
+
+            <input type="file" id="file_selector" style="display: none;" />
+            <input 
+                type="button" 
+                id="load_file" 
+                value="Choose file:" 
+                onclick="document.getElementById('file_selector').click()">
+            <a id="file_name"></a>
             </small>
+            </label>
+            </p>
             
-            </center>
+            
         </div>
+
     </div>
 
     <hr>
 
     <div class="row">
+
+        <div class="col-sm-3">
+            <center>
+            <a class="btn btn-md btn-success" role="button"
+               onclick="run_deft(); draw_chart()">
+               Rerun DEFT
+            </a>
+            </center>
+        </div>
 
         <div class="col-sm-9" >
             <center>
@@ -253,7 +329,7 @@ $("#menubar_1d").addClass("active");
             <!-- User specifies number of grid points and bounding box --> 
             
             &alpha;:
-            <select id='alpha' name='alpha' width='1'>
+            <select id='alpha' name='alpha' width='1' onchange="$('#maxent_order').val($('#alpha').val())">
                 <option value='1'>1</option>
                 <option value='2'>2</option>
                 <option value='3' selected='selected'>3</option>
@@ -262,9 +338,13 @@ $("#menubar_1d").addClass("active");
 
             G:
             <select name='num_gridpoints' width='1'>
-                <option value='30'> 30 </option>
-                <option value='100' selected='selected'> 100 </option>
-                <option value='300'> 300 </option>
+                <option value='20'> 20 </option>
+                <option value='50'> 50 </option>
+                <option value='100'> 100 </option>
+                <option value='200' selected='selected'> 200 </option>
+                <option value='500'> 500 </option>
+                <option value='1000'> 1000 </option>
+                <option value='2000'> 2000 </option>
             </select>.
             &nbsp;&nbsp;
 
@@ -291,15 +371,6 @@ $("#menubar_1d").addClass("active");
                 <option value='True'>yes</option>
             </select>. 
 
-            </center>
-        </div>
-
-        <div class="col-sm-3">
-            <center>
-            <a class="btn btn-md btn-success" role="button"
-               onclick="run_deft(); draw_chart()">
-               Rerun DEFT 1D
-            </a>
             </center>
         </div>
 

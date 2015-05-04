@@ -16,8 +16,9 @@ import time
 T_MAX = 100
 T_MIN = -100
 LOG_E_RANGE = 100
-PHI_MAX = 50
-PHI_MIN = -50
+PHI_MAX = utils.PHI_MAX
+PHI_MIN = utils.PHI_MIN
+MAX_DS = -1E-3
 
 class Results(): pass;
 
@@ -239,6 +240,10 @@ def compute_predictor_step(phi, R, Delta, t, direction, resolution):
     # Make sure direction is just a sign
     assert(direction==1 or direction==-1)
 
+    # Make sure phi is ok
+    assert all(phi >= utils.PHI_MIN) 
+    assert all(phi <= utils.PHI_MAX)
+
     # Get current probability dist
     Q = utils.field_to_prob(phi)
 
@@ -259,12 +264,18 @@ def compute_predictor_step(phi, R, Delta, t, direction, resolution):
     dt = direction*resolution/denom
 
     # Return phi_new and new t_new
+    # WARNING: IT IS NOT YET CLEAR THAT PHI_NEW
+    # ISN'T INSANE
     phi_new = phi + rho*dt
     t_new = t + dt
     return phi_new, t_new
 
 # Computes corrector step
 def compute_corrector_step(phi, R, Delta, t, tollerance=1E-5, report_num_steps=False):
+
+    # Make sure phi_new is ok
+    assert all(phi >= utils.PHI_MIN) 
+    assert all(phi <= utils.PHI_MAX)
 
     # Evaluate the probabiltiy distribution
     Q = utils.field_to_prob(phi)
@@ -284,68 +295,74 @@ def compute_corrector_step(phi, R, Delta, t, tollerance=1E-5, report_num_steps=F
         H = hessian(phi, R, Delta, t)
 
         # Solve linear equation to get change in field
-        try:
-            dphi = -spsolve(H,v)
-            assert all(np.isreal(dphi))
-            assert all(np.isfinite(dphi))        
-        except:
-            break
+        dphi = -spsolve(H,v)
+
+        # Make sure dphi is real and finite
+        assert all(np.isreal(dphi))
+        assert all(np.isfinite(dphi))        
 
         # Compute corresponding change in action
         dS = sp.sum(dphi*v)
-        
+
+        # If we're already very close to the max, then dS will be close to zero
+        # in this case, we're done already
+        if dS > MAX_DS:
+            break;
+
         # Reduce step size until in linear regime
         beta = 1.0
         while True:
 
-            # Compute new phi 
-            phi_new = phi + beta*dphi
-            try:
-                Q_new = utils.field_to_prob(phi_new, regularize=True)
-            except:
-                print 'Error: setting Q_new failed.'
-                print 'phi == %s'%str(phi)
-                print 'dphi == %s'%str(dphi)
-                print 'beta== %s'%str(beta)
-                raise
-
             # Make sure beta isn't fucking up
-            if beta < 1E-10:
+            if beta < 1E-50 :
                 print ' --- Something is wrong. ---'
                 print 'beta == %f'%beta
                 print 'dS == %f'%dS
                 print 'S == %f'%S
                 print 'S_new == %f'%S_new
-                print 'phi == ' + str(phi)
-                print 'dphi == ' + str(dphi)
-                print 'v == ' + str(v)
-                print 'geo_dist == %f'%utils.geo_dist(Q_new,Q)
+                print '|phi| == %f'%np.linalg.norm(phi)
+                print '|dphi| == %f'%np.linalg.norm(dphi)
+                print '|v| == %f'%np.linalg.norm(v)
                 print ''
-                time.sleep(1)
+                assert False
 
-            # If geodesic distance is less than tollerance, continue
-            gd = utils.geo_dist(Q_new, Q)
-            if gd < tollerance:
-                break;
+            # Compute new phi 
+            phi_new = phi + beta*dphi
+
+            # If new phi is not sane, decrease beta
+            if any(phi_new < utils.PHI_MIN) or  any(phi_new > utils.PHI_MAX):
+                num_backtracks+=1
+                beta *= 0.5 
+                continue
 
             # Compute new action
             S_new = action(phi_new, R, Delta, t)
 
             # Check for linear regime 
-            if (S_new <= S + 0.5*beta*dS):
+            if (S_new - S <= 0.5*beta*dS):
                 break
 
             # If not in linear regime backtrack value of beta
             else:
                 num_backtracks+=1
-                beta *= 0.5    
+                beta *= 0.5  
+                continue
+
+         # Make sure phi_new is ok
+        assert all(phi_new >= utils.PHI_MIN) 
+        assert all(phi_new <= utils.PHI_MAX)
+
+        # Comptue new Q
+        Q_new = utils.field_to_prob(phi_new)
 
         # Break out of loop if Q_new is close enough to Q
+        gd = utils.geo_dist(Q_new, Q)
         if gd < tollerance:
             break
         
         # Break out of loop with warning if S_new > S. Should not happen,
         # but not fatal if it does. Just means less precision
+        # ACTUALLY, THIS SHOULD NEVER HAPPEN!
         elif S_new-S > 0:
             print 'Warning: S_change > 0. Terminating corrector steps.'
             break
@@ -366,7 +383,8 @@ def compute_corrector_step(phi, R, Delta, t, tollerance=1E-5, report_num_steps=F
         return phi
 
 # The core algorithm of DEFT, used for both 1D and 2D density esitmation
-def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3):
+def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3, 
+    print_t=False, t_start=0.0):
     """ Traces the map curve in both directions
 
     Args:
@@ -441,11 +459,6 @@ def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3):
     # Set maximum log evidence ratio so far encountered
     log_E_max = -np.Inf #0
 
-    # Smoothness parameter t. 
-    # t_start corresponds to ell_0 = sqrt(G)
-    t_start = sp.log(N) - alpha*sp.log(G) 
-    #print 'Starting at t == %f'%t_start
-
     # Compute phi_start by executing a corrector step starting at maxent dist
     phi_start = compute_corrector_step( phi_infty, R, Delta, t_start, \
                                         tollerance=tollerance, \
@@ -464,6 +477,8 @@ def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3):
     log_E_max = log_E_start if (log_E_start > log_E_max) else log_E_max
 
     # Set start as first map curve point 
+    if print_t:
+        print 't == %.2f'%t_start
     map_curve.add_point(t_start, Q_start, log_E_start) #, start_details)
 
     # Trace map curve in both directions
@@ -492,8 +507,12 @@ def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3):
                                                      direction=direction, \
                                                      resolution=resolution )
 
+            # If phi_pre is insane, start iterating from phi instead
+            if any(phi_pre > PHI_MAX) or any (phi_pre < PHI_MIN):
+                phi_pre = phi
+
             # Compute new distribution
-            Q_pre = utils.field_to_prob(phi_pre)
+            #Q_pre = utils.field_to_prob(phi_pre)
 
             #print 'geo_dist(Q_pre,Q) == %f'%utils.geo_dist(Q_pre,Q)
 
@@ -504,6 +523,9 @@ def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3):
 
             # Compute new distribution
             Q_new = utils.field_to_prob(phi_new)
+
+            # Print geodistance between Q and Q_new
+            #print utils.geo_dist(Q_new,Q)
 
             # Compute log ptgd
             log_ptgd_new, details_new = log_ptgd(N, phi_new, R, Delta, t_new)
@@ -519,6 +541,8 @@ def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3):
             details = details_new
 
             # Add new point to map curve
+            if print_t:
+                print 't == %.2f'%t
             map_curve.add_point(t, Q, log_E) #, details_new)
 
             # Adjust max log evidence ratio
@@ -551,7 +575,7 @@ def compute_map_curve(N, R, Delta, resolution=1E-2, tollerance=1E-3):
 
 # The core algorithm of DEFT, used for both 1D and 2D density esitmation
 def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
-    details=False, errorbars=True, num_samples=20 ):
+    details=False, errorbars=False, num_samples=0, t_start=0.0, print_t=False):
     """
     The core algorithm of DEFT, used for both 1D and 2D density estmation.
 
@@ -583,9 +607,16 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
     R = 1.0*counts_array/N
     
     # Compute the MAP curve
+    start_time = time.clock()
     map_curve = compute_map_curve( N, R, Delta, \
                                    resolution=resolution, \
-                                   tollerance=tollerance)
+                                   tollerance=tollerance,
+                                   t_start=t_start,
+                                   print_t=print_t)
+    end_time = time.clock()
+    map_curve_compute_time = end_time-start_time
+    if print_t:
+        print 'MAP curve computation took %.2f sec'%(map_curve_compute_time)
 
     # Identify the optimal density estimate
     points = map_curve.points
@@ -593,12 +624,14 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
     log_E_max = log_Es.max()
     ibest = log_Es.argmax()
     star = points[ibest]
-    Q_star = star.Q
+    Q_star = np.copy(star.Q)
     t_star = star.t
-    phi_star = star.phi
+    phi_star = np.copy(star.phi)
+    map_curve.i_star = ibest
 
     # Compute errorbars if requested
     if errorbars:   
+        start_time = time.clock()
 
         # Get list of map_curve points that with evidence ratio 
         # of at least 1% the maximum
@@ -648,9 +681,14 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
         Q_ub = Q_star + np.sqrt(dQ_sq)
         Q_lb = Q_star - np.sqrt(dQ_sq)
 
+        # Compute time to get errorbars
+        end_time = time.clock()
+        errorbar_compute_time = end_time - start_time
+
     # Sample plausible densities from the posterior
     Q_samples = sp.zeros([0,0])
     if num_samples > 0:
+        start_time = time.clock()
 
         #print 't_star == ' + str(t_star)
 
@@ -753,8 +791,8 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
             
             # Perform initial sampling at this ell
             # Sample 10x more phis than needed if doing posterior pruning
-            #M = 10*num_samples_at_ell
-            M = num_samples_at_ell
+            M = 10*num_samples_at_ell
+            #M = num_samples_at_ell
             phi_samps = sp.zeros([G,M])
             sample_actions = sp.zeros(M)
             for m in range(M):
@@ -779,11 +817,11 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
                 # RIGHT NOW I DON'T THINK THIS SHOULD BE DONE
                 # THIS LACK OR PRUNING CREATES FLIPPY TAILS ON THE POSTERIOR
                 # SAMPLES, BUT THIS GENUINELY REFLECTS THE HESSIAN I THINK
-                if True:
+                if False:
                     sample_actions[m] = 0
                 else:
                     S = (1.*N/G)*action(phi, R, Delta, p.t, phi_in_kernel=phi_in_kernel)
-                    sample_actions[m] = -S+S_samp
+                    sample_actions[m] = S-S_samp
 
             # Now compute weights. Have to make bring actions into a 
             # sensible range first
@@ -810,9 +848,10 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
             #print np.sort(sample_probs)[::-1]
             for n in range(num_samples_at_ell):
                 index = sample_indices[n]
+                #print sample_weights[index]
                 phi = phi_samps[:,index]
                 m = num_samples_obtained + n
-                Q_samples[:,m] = utils.field_to_prob(phi, regularize=True)
+                Q_samples[:,m] = utils.field_to_prob(phi)
 
             num_samples_obtained += num_samples_at_ell
 
@@ -820,13 +859,44 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
         indices = np.arange(Q_samples.shape[1])
         np.random.shuffle(indices)
         Q_samples = Q_samples[:,indices]
+        end_time = time.clock()
+        posterior_sample_compute_time = end_time-start_time
 
+    #
+    # Package results
+    #
+
+    # Create container
+    results = Results()
+    
+    # Fill in info that's guareneed to be there
+    results.Q_star = Q_star
+    results.R = R
+    results.map_curve = map_curve
+    results.map_curve_compute_time = map_curve_compute_time
+    results.G = G
+    results.N = N
+    results.t_star = t_star
+    results.i_star = ibest
+    results.counts = counts_array
+    results.resolution = resolution
+    results.tollerance = tollerance
+    #results.Delta = Delta
+    results.errorbars = errorbars
+    results.num_samples = num_samples
+
+    # Include errorbar info if this was computed
+    if errorbars:
+        results.Q_ub = Q_ub
+        results.Q_lb = Q_lb
+        results.errorbar_compute_time = errorbar_compute_time
+
+    # Include posterior sampling info if any sampling was performed
+    if num_samples > 0:
+        results.Q_samples = Q_samples
+        results.posterior_sample_compute_time = posterior_sample_compute_time
 
     # Return density estimate along with histogram on which it is based
-    if details:
-        return Q_star, R, Q_ub, Q_lb, Q_samples, map_curve
-    else:
-        return Q_star, R
-
+    return results
 
 

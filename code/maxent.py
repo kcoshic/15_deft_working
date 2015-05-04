@@ -93,7 +93,7 @@ def compute_maxent_prob_1d(R, kernel, h=1.0, report_num_steps=False,
 
 # Computes the maximum entropy probaiblity distribution
 def compute_maxent_prob_2d(R, kernel, grid_spacing=[1.0,1.0],\
-        report_num_steps=False):
+        report_num_steps=False, phi0=False):
     if not isinstance(phi0,np.ndarray):
         phi0 = np.zeros(R.size)
     else:
