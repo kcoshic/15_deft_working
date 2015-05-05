@@ -18,7 +18,7 @@ import simulate_data_2d
 plt.close('all')
 
 # Generate data
-N = 250
+N = 50
 num_bins = [28,28]
 alphas = [3,5,7,9,11]
 data_types = '''

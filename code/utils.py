@@ -8,6 +8,7 @@ TINY_FLOAT64 = sp.finfo(sp.float64).tiny
 TINY_FLOAT32 = sp.finfo(sp.float32).tiny
 PHI_MIN = -500
 PHI_MAX = 500
+PHI_STD_REG = 20.0
 
 # This is useful for testing whether something is a number
 NUMBER = (int, float, long)

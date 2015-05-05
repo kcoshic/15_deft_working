@@ -13,12 +13,13 @@ import time
 
 # Put hard bounds on how big or small t can be
 # T_MIN especially seems to help convergence
-T_MAX = 100
-T_MIN = -100
+T_MAX = 20
+T_MIN = -20
 LOG_E_RANGE = 100
 PHI_MAX = utils.PHI_MAX
 PHI_MIN = utils.PHI_MIN
 MAX_DS = -1E-3
+PHI_STD_REG = utils.PHI_STD_REG 
 
 class Results(): pass;
 
@@ -85,7 +86,7 @@ class MAP_curve:
 # This provides for more robust numerics
 
 # Evaluate the action of a field given smoothness criteria
-def action(phi, R, Delta, t, phi_in_kernel=False):
+def action(phi, R, Delta, t, phi_in_kernel=False, regularized=False):
     G = 1.*len(R)
     quasiQ = utils.field_to_quasiprob(phi)
     quasiQ_col = sp.mat(quasiQ).T
@@ -101,12 +102,15 @@ def action(phi, R, Delta, t, phi_in_kernel=False):
            + G*R_col.T*phi_col \
            + G*ones_col.T*quasiQ_col
 
+    if regularized:
+        S_mat += 0.5*(phi_col.T*phi_col)/(PHI_STD_REG**2)
+
     S = S_mat[0,0]
     assert np.isreal(S)
     return S
 
 # Evaluate action gradient w.r.t. a field given smoothness criteria
-def gradient(phi, R, Delta, t):
+def gradient(phi, R, Delta, t, regularized=False):
     G = 1.*len(R)
     quasiQ = utils.field_to_quasiprob(phi)
     quasiQ_col = sp.mat(quasiQ).T
@@ -114,17 +118,27 @@ def gradient(phi, R, Delta, t):
     phi_col = sp.mat(phi).T
     R_col = sp.mat(R).T
     grad_col = sp.exp(-t)*Delta_sparse*phi_col + G*R_col - G*quasiQ_col
+
+    if regularized:
+        grad_col += phi_col/(PHI_STD_REG**2)
+
     grad = sp.array(grad_col).ravel()
+
     assert all(np.isreal(grad))
     return grad
 
 # Evaluate action hessain w.r.t. a field given smoothness criteria
 # NOTE: returns sparse matrix, not dense matrix!
-def hessian(phi, R, Delta, t):
+def hessian(phi, R, Delta, t, regularized=False):
     G = 1.*len(R)
     quasiQ = utils.field_to_quasiprob(phi)
     Delta_sparse = Delta.get_sparse_matrix()
-    return sp.exp(-t)*Delta_sparse + G*diags(quasiQ,0)
+    H = sp.exp(-t)*Delta_sparse + G*diags(quasiQ,0)
+
+    if regularized:
+        H += diags(np.ones(G),0)/(PHI_STD_REG**2)
+
+    return H
 
 # Get log ptgd of the maxent density
 def log_ptgd_at_maxent(N, phi_M, R, Delta):
@@ -250,7 +264,7 @@ def compute_predictor_step(phi, R, Delta, t, direction, resolution):
     G = 1.*len(Q)
 
     # Get hessian
-    H = hessian(phi, R, Delta, t)
+    H = hessian(phi, R, Delta, t, regularized=True)
 
     # Comput rho, which indicates direction of step
     rho = G*spsolve(H, Q - R )
@@ -281,7 +295,7 @@ def compute_corrector_step(phi, R, Delta, t, tollerance=1E-5, report_num_steps=F
     Q = utils.field_to_prob(phi)
 
     # Evaluate action
-    S = action(phi, R, Delta, t)
+    S = action(phi, R, Delta, t, regularized=True)
 
     # Perform corrector steps until until phi converges
     num_corrector_steps = 0
@@ -289,10 +303,10 @@ def compute_corrector_step(phi, R, Delta, t, tollerance=1E-5, report_num_steps=F
     while True:
 
         # Compute the gradient
-        v = gradient(phi, R, Delta, t)
+        v = gradient(phi, R, Delta, t, regularized=True)
         
         # Compute the hessian
-        H = hessian(phi, R, Delta, t)
+        H = hessian(phi, R, Delta, t, regularized=True)
 
         # Solve linear equation to get change in field
         dphi = -spsolve(H,v)
@@ -336,7 +350,7 @@ def compute_corrector_step(phi, R, Delta, t, tollerance=1E-5, report_num_steps=F
                 continue
 
             # Compute new action
-            S_new = action(phi_new, R, Delta, t)
+            S_new = action(phi_new, R, Delta, t, regularized=True)
 
             # Check for linear regime 
             if (S_new - S <= 0.5*beta*dS):
@@ -705,7 +719,7 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
         # Compute eigenvectors of the Hessian
         # If t is finite, this is straight-forward
         if t_star > -np.Inf:
-            h_star = hessian(phi_star, R, Delta, t_star)
+            h_star = hessian(phi_star, R, Delta, t_star, regularized=True)
             lambdas_unordered, psis_unordered = eigh(h_star.todense())
             ordered_indices = np.argsort(lambdas_unordered)
             psis = psis_unordered[:,ordered_indices]
@@ -751,7 +765,7 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
             if p.t > -np.Inf:
                 # Get hessian
                 #H = (1.*N/G)*hessian(p.phi, R, Delta, p.t)
-                H = hessian(p.phi, R, Delta, p.t)
+                H = hessian(p.phi, R, Delta, p.t, regularized=True)
 
                 # Compute inverse variances below threshold
                 inv_vars = []
@@ -820,7 +834,7 @@ def run(counts_array, Delta, resolution=3.14E-2, tollerance=1E-3, \
                 if False:
                     sample_actions[m] = 0
                 else:
-                    S = (1.*N/G)*action(phi, R, Delta, p.t, phi_in_kernel=phi_in_kernel)
+                    S = (1.*N/G)*action(phi, R, Delta, p.t, phi_in_kernel=phi_in_kernel, regularized=True)
                     sample_actions[m] = S-S_samp
 
             # Now compute weights. Have to make bring actions into a 

@@ -5,6 +5,8 @@ from scipy.linalg import solve, det, norm
 import utils
 import laplacian
 
+PHI_STD_REG = utils.PHI_STD_REG 
+
 # Compute field from its coefficients in a basis
 def coeffs_to_field(coeffs, kernel):
     """ For maxent algorithm. """
@@ -22,7 +24,8 @@ def coeffs_to_field(coeffs, kernel):
     return sp.array(field_col).ravel() # Returns an array
 
 # Compute the action of a field given its coefficients in a basis
-def action_per_datum_from_coeffs(coeffs, R, kernel, phi0=False):
+def action_per_datum_from_coeffs(coeffs, R, kernel, phi0=False, 
+    regularized=True):
     """ For optimizer. Computes action from coefficients. """
     if not isinstance(phi0,np.ndarray):
         phi0 = np.zeros(R.size)
@@ -34,10 +37,14 @@ def action_per_datum_from_coeffs(coeffs, R, kernel, phi0=False):
     current_term = sp.sum(R*phi)
     nonlinear_term = sp.sum(quasiQ)
     s = current_term + nonlinear_term
+    if regularized:
+        G = len(phi)
+        s += (.5/G)*sum(phi**2)/(PHI_STD_REG**2)
     return s
 
 # Compute the action gradient w.r.t field coefficients in a basis
-def gradient_per_datum_from_coeffs(coeffs, R, kernel, phi0=False):
+def gradient_per_datum_from_coeffs(coeffs, R, kernel, phi0=False, 
+    regularized=True):
     """ For optimizer. Computes gradient from coefficients. """
     if not isinstance(phi0,np.ndarray):
         phi0 = np.zeros(R.size)
@@ -46,18 +53,27 @@ def gradient_per_datum_from_coeffs(coeffs, R, kernel, phi0=False):
 
     phi = coeffs_to_field(coeffs, kernel)
     quasiQ = utils.field_to_quasiprob(phi+phi0)
+    G = len(phi)
 
     R_row = sp.mat(R) # 1 x G
     quasiQ_row = sp.mat(quasiQ) # 1 x G
+    reg_row = (1./G)*sp.mat(phi)/(PHI_STD_REG**2) # 1 x G
     kernel_mat = sp.mat(kernel) # G x kernel_dim
 
     mu_R_row = R_row*kernel_mat # 1 x kernel_dim
     mu_quasiQ_row = quasiQ_row*kernel_mat # 1 x kernel_dim
+    mu_reg_row = reg_row*kernel_mat
 
-    return sp.array(mu_R_row - mu_quasiQ_row).ravel() # Returns an array
+    if regularized:
+        grad_row = mu_R_row - mu_quasiQ_row + mu_reg_row
+    else:
+        grad_row = mu_R_row - mu_quasiQ_row
+
+    return sp.array(grad_row).ravel() # Returns an array
 
 # Compute the action hessin w.r.t field coefficients in a basis
-def hessian_per_datum_from_coeffs(coeffs, R, kernel, phi0=False):
+def hessian_per_datum_from_coeffs(coeffs, R, kernel, phi0=False, 
+    regularized=True):
     """ For optimizer. Computes hessian from coefficients. """
     if not isinstance(phi0,np.ndarray):
         phi0 = np.zeros(R.size)
@@ -68,9 +84,13 @@ def hessian_per_datum_from_coeffs(coeffs, R, kernel, phi0=False):
     quasiQ = utils.field_to_quasiprob(phi+phi0)
     
     kernel_mat = sp.mat(kernel) # G x kernel_dim matrix
-    quasiQ_diag_mat = sp.mat(sp.diag(quasiQ)) # G x G matrix
+    H = sp.mat(sp.diag(quasiQ)) # G x G matrix
 
-    hessian_mat = kernel_mat.T*quasiQ_diag_mat*kernel_mat # kernel_dim^2 matrix
+    if regularized:
+        G = len(phi)
+        H += (1./G)*sp.diag(np.ones(G))/(PHI_STD_REG**2)
+
+    hessian_mat = kernel_mat.T*H*kernel_mat # kernel_dim^2 matrix
 
     return sp.array(hessian_mat) # Returns an array
 

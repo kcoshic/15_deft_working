@@ -25,7 +25,7 @@ three_sharp_corners
 four_corners
 '''.split()
 
-def digit(N, digit='random',background=0.2):
+def digit(N, digit='random',background=0.0):
     # Get image
     image = digits.get_digit_images(num=1, digit=digit)[0]
     image = image.T
