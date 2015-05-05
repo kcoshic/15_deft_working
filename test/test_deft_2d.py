@@ -39,10 +39,10 @@ def mutual_information(Q_xy):
 plt.close('all')
 
 # Generate data
-N = 200
+N = 150
 num_bins = [25,25]
 alpha = 4
-data_type = 'digit' 
+data_type = 'face' 
 
 resolution = 1E-1
 tollerance = 1E-3
@@ -220,4 +220,4 @@ plt.show()
 #plt.tight_layout() # Needed so plot is drawn tollerably
 
 # Save plot
-plt.savefig('report.test_maxent_2d.png')
+#plt.savefig('report.test_maxent_2d.png')

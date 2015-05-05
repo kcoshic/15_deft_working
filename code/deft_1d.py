@@ -40,7 +40,7 @@ def get_commandline_arguments():
 
 
     # Optional input arguments
-    parser.add_argument('-a', '--alpha', type=int, default=3, choices=[1,2,3], help='Derivative to constrain.')
+    parser.add_argument('-a', '--alpha', type=int, default=3, help='Derivative to constrain.')
     parser.add_argument('-G', '--num_gridpoints', type=int, default=100, help='Number of gridpoints to use.')
     parser.add_argument('-e', '--epsilon', default=0.01, type=float, help='Geodesic distance spacing of computed densities along MAP curve.')
     parser.add_argument('-t', '--tollerance', default=0.000001, type=float, help='Tollerance for termination of corrector steps.')

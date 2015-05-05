@@ -16,6 +16,7 @@ MAX_NUM_SAMPLES = 1E6
 
 valid_distributions = '''
 digit
+digit_negative
 uncorrelated_gaussian
 correlated_gaussian
 two_gaussians
@@ -25,10 +26,15 @@ three_sharp_corners
 four_corners
 '''.split()
 
-def digit(N, digit='random',background=0.0):
+def digit(N, digit='random',background=0.0, negative=False):
     # Get image
     image = digits.get_digit_images(num=1, digit=digit)[0]
     image = image.T
+
+    # Invert image if requested
+    if negative:
+        image_max = max(image.ravel())
+        image = image_max - image
 
     # Convert image to list of lists
     Gx, Gy = image.shape
@@ -195,6 +201,10 @@ def run(distribution_type='correlated_gaussian', N=100):
     if distribution_type == 'digit':
         description = 'Handwritten digit'
         data, pdf_py, pdf_js, box =  digit(N, digit='random')
+
+    elif distribution_type == 'digit_negative':
+        description = 'Handwritten digit, negative'
+        data, pdf_py, pdf_js, box =  digit(N, digit='random', negative=True)
 
     elif distribution_type == 'uncorrelated_gaussian':
         description = 'Uncorrelated Gaussian'
