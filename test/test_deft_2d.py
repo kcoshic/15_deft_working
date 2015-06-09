@@ -39,7 +39,7 @@ def mutual_information(Q_xy):
 plt.close('all')
 
 # Generate data
-N = 150
+N = 100
 num_bins = [25,25]
 alpha = 4
 data_type = 'face' 
