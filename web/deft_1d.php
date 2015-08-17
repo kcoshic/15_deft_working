@@ -342,8 +342,8 @@ $("#menubar_1d").addClass("active");
             <select name='num_gridpoints' width='1'>
                 <option value='20'> 20 </option>
                 <option value='50'> 50 </option>
-                <option value='100'> 100 </option>
-                <option value='200' selected='selected'> 200 </option>
+                <option value='100' selected='selected'> 100 </option>
+                <option value='200'> 200 </option>
                 <option value='500'> 500 </option>
                 <option value='1000'> 1000 </option>
                 <option value='2000'> 2000 </option>

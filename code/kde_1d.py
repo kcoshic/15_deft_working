@@ -81,7 +81,7 @@ def load_data(data_file_handle, MAX_NUM_DATA=1E6):
 #
 
 # Kernel density esitmation function
-def kde(data, G, bbox, cv=20):
+def kde(data, G, bbox, cv=20, details=False):
 
     # Define grid
     h, bin_centers, bin_edges = utils.grid_info_from_bbox_and_G(bbox,G)
@@ -110,7 +110,10 @@ def kde(data, G, bbox, cv=20):
     # Compute, normalize, and return pdf
     pdf = np.exp(kde_best.score_samples(bin_centers[:, None]))
     pdf /= h*np.sum(pdf)
-    return pdf
+    if not details:
+        return pdf
+    else:
+        return pdf, bin_centers, kde_best
 
 def run(data, G=100, bbox=[-np.Inf, np.Inf]):
     
