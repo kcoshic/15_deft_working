@@ -235,6 +235,7 @@ def run(data, G=100, alpha=3, bbox=[-np.Inf, np.Inf], periodic=False, \
     results.periodic = periodic
     results.alpha = alpha
     results.bbox = bbox
+    results.Delta = Delta
     copy_compute_time = time.clock() - copy_start_time
 
     # Compute differential entropy in bits
